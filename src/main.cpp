@@ -16,7 +16,9 @@ sf::Font font1;
 constexpr float WIDTH {1400};
 constexpr float HEIGHT {900};
 constexpr float cutoff = 14;
-#define CROSS_RATE 1000000000
+constexpr unsigned long long CROSS_RATE = 1000000000;
+constexpr unsigned long long DEATH_TIME = CROSS_RATE*4;
+#define MIN_BLOBS 5
 std::uniform_int_distribution<> motion_dis(-6, 6);
 std::uniform_int_distribution<> small_dis(5, 20);
 std::uniform_int_distribution<> big_dist(30, 50);
@@ -55,7 +57,7 @@ class Blob
     ~Blob() = default;
 
     ColorGenotype c;
-    SizeGenotype sz;
+    SizeGenotype s;
     sf::Vector2f vector;
     float size;
     sf::CircleShape object;
@@ -64,6 +66,7 @@ class Blob
     sf::Text sizetext;
 
     std::chrono::steady_clock::time_point previous_cross;
+    std::chrono::steady_clock::time_point birth;
 
     void update(int x, int y);
     bool isTouching(Blob *another);
@@ -96,7 +99,7 @@ bool Blob::isTouching(Blob *another){
 Blob::Blob(sf::Vector2f v, ColorGenotype c, SizeGenotype sz){
 
   this->c=c;
-  this->sz=sz;
+  this->s=sz;
 
   if(sz.first==Small || sz.second==Small) this->size = small_dis(gen);
   else                                    this->size = big_dist(gen);
@@ -111,9 +114,9 @@ Blob::Blob(sf::Vector2f v, ColorGenotype c, SizeGenotype sz){
   this->coltext=sf::Text(buf, font1, this->size);
   buf.clear();
 
-  if(this->sz.first==Big)    buf+="S";
+  if(this->s.first==Big)    buf+="S";
   else                       buf+="s";
-  if(this->sz.second==Small) buf+="S";
+  if(this->s.second==Small) buf+="S";
   else                       buf+="s";
 
   this->sizetext=sf::Text(buf, font1, this->size);
@@ -122,6 +125,7 @@ Blob::Blob(sf::Vector2f v, ColorGenotype c, SizeGenotype sz){
 
 
   this->previous_cross = std::chrono::steady_clock::now();
+  this->birth          = std::chrono::steady_clock::now();
   this->vector=v;
   this->object.setPosition(v);
   this->object=sf::CircleShape{size};
@@ -147,13 +151,13 @@ Blob::Blob(Blob *parent1, Blob *parent2){
     order?c1:c2, order?c2:c1
   };
 
-  Size sz1 = binary_dis(gen)==0?parent1->sz.first:parent1->sz.second;
-  Size sz2 = binary_dis(gen)==0?parent2->sz.first:parent2->sz.second;
-  this->sz=SizeGenotype{
+  Size sz1 = binary_dis(gen)==0?parent1->s.first:parent1->s.second;
+  Size sz2 = binary_dis(gen)==0?parent2->s.first:parent2->s.second;
+  this->s=SizeGenotype{
     order?sz1:sz2, order?sz2:sz1
   };
 
-  if(this->sz.first==Small || this->sz.second==Small) this->size = small_dis(gen);
+  if(this->s.first==Small || this->s.second==Small) this->size = small_dis(gen);
   else                                                this->size = big_dist(gen);
 
 
@@ -166,9 +170,9 @@ Blob::Blob(Blob *parent1, Blob *parent2){
   this->coltext=sf::Text(buf, font1, this->size);
   buf.clear();
 
-  if(this->sz.first==Big)    buf+="S";
+  if(this->s.first==Big)    buf+="S";
   else                       buf+="s";
-  if(this->sz.second==Small) buf+="S";
+  if(this->s.second==Small) buf+="S";
   else                       buf+="s";
 
   this->sizetext=sf::Text(buf, font1, this->size);
@@ -177,6 +181,7 @@ Blob::Blob(Blob *parent1, Blob *parent2){
 
 
   this->previous_cross = std::chrono::steady_clock::now();
+  this->birth          = std::chrono::steady_clock::now();
   this->vector = parent1->vector;
   this->object = sf::CircleShape{this->size};
   this->object.setPosition(parent1->vector);
@@ -215,10 +220,10 @@ int main(int argc, char **argv) {
       if(event.type == sf::Event::KeyPressed){
         if(event.key.code == sf::Keyboard::Escape || event.key.code == sf::Keyboard::Q) w.close();
 
-        if(event.key.code == sf::Keyboard::Right) blobs[1].update(blobs[1].vector.x+16, blobs[1].vector.y  );
-        if(event.key.code == sf::Keyboard::Left)  blobs[1].update(blobs[1].vector.x-16, blobs[1].vector.y  );
-        if(event.key.code == sf::Keyboard::Up)    blobs[1].update(blobs[1].vector.x,   blobs[1].vector.y-16);
-        if(event.key.code == sf::Keyboard::Down)  blobs[1].update(blobs[1].vector.x,   blobs[1].vector.y+16);
+        if(event.key.code == sf::Keyboard::Right) blobs[0].update(blobs[0].vector.x+16, blobs[1].vector.y  );
+        if(event.key.code == sf::Keyboard::Left)  blobs[0].update(blobs[0].vector.x-16, blobs[1].vector.y  );
+        if(event.key.code == sf::Keyboard::Up)    blobs[0].update(blobs[0].vector.x,   blobs[1].vector.y-16);
+        if(event.key.code == sf::Keyboard::Down)  blobs[0].update(blobs[0].vector.x,   blobs[1].vector.y+16);
 
       }
     }
@@ -227,12 +232,16 @@ int main(int argc, char **argv) {
 
     w.clear(sf::Color{0x282828ff});
     for(size_t i=0;i<blobs.size();i++){
+      /* if(blobs.size()>MIN_BLOBS){ */
+      /*   auto a = std::chrono::steady_clock::now()-blobs[i].previous_cross; */
+      /*   if(a.count()>=DEATH_TIME) blobs.erase(blobs.begin()+i); */
+      /* } */
       for(size_t j=i;j<blobs.size();j++){
         if(i==j) continue;
-        auto a = std::chrono::steady_clock::now()-blobs[i].previous_cross;
-        auto b = std::chrono::steady_clock::now()-blobs[j].previous_cross;
+        auto b = std::chrono::steady_clock::now()-blobs[i].previous_cross;
+        auto c = std::chrono::steady_clock::now()-blobs[j].previous_cross;
         if(blobs[i].isTouching(&blobs[j])){
-          if(a.count()>=CROSS_RATE && b.count()>=CROSS_RATE){
+          if(b.count()>=CROSS_RATE && c.count()>=CROSS_RATE){
             blobs.push_back(Blob(&blobs[i], &blobs[j]));
             blobs[i].previous_cross=std::chrono::steady_clock::now();
             blobs[j].previous_cross=std::chrono::steady_clock::now();
