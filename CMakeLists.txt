@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.12)
 
-set(EXEC agle)
+set(EXEC scarf)
 project(${EXEC} VERSION 0.1)
 
 # Set C++ standard
