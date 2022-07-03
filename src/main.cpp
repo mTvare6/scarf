@@ -1,6 +1,7 @@
 #include <SFML/Config.hpp>
 #include <SFML/Graphics.hpp>
 #include <SFML/Window.hpp>
+#include <SFML/Window/Mouse.hpp>
 #include <iostream>
 #include <random>
 #include <string>
@@ -14,14 +15,17 @@ constexpr float WIDTH {1400};
 constexpr float HEIGHT {900};
 constexpr float cutoff = 14;
 constexpr unsigned long long CROSS_RATE = 1000000000;
-constexpr unsigned long long DEATH_TIME = CROSS_RATE*14;
-constexpr unsigned int MIN_BLOBS = 10;
-constexpr unsigned int MAX_BLOBS = 50;
+constexpr unsigned long long DEATH_TIME = CROSS_RATE*12;
+constexpr unsigned int MIN_BLOBS = 8;
+constexpr unsigned int MAX_BLOBS = 24;
+constexpr unsigned int SPEED = 32;
 
 
-std::uniform_int_distribution<> motion_dis(-6, 6);
-std::uniform_int_distribution<> small_dis(5, 20);
-std::uniform_int_distribution<> big_dist(30, 45);
+std::uniform_int_distribution<> xmove(45, WIDTH -45);
+std::uniform_int_distribution<> ymove(45, HEIGHT-45);
+
+std::uniform_int_distribution<> small_dis(10, 20);
+std::uniform_int_distribution<> big_dist(35, 45);
 
 std::random_device rd;
 std::mt19937 gen(rd());
@@ -37,7 +41,7 @@ enum Color{
   Yellow,
 };
 enum Size{
-  Big,
+  Big, // dominant
   Small,
 };
 
@@ -62,6 +66,7 @@ class Blob{
     ColorGenotype c;
     SizeGenotype s;
     sf::Vector2f vector;
+    sf::Vector2f dest;
     float size;
     CircleShape object;
 
@@ -70,24 +75,55 @@ class Blob{
 
     std::chrono::steady_clock::time_point previous_cross;
     std::chrono::steady_clock::time_point birth;
+    std::chrono::steady_clock::time_point move;
 
-    void update(int x, int y);
+    void goCord(int x, int y);
+    void update();
     bool operator==(Blob &another);
 
   private:
 
 };
 
-void Blob::update(int x, int y){
-  if(y<=0)           this->vector.y=4;
-  else if(y>=HEIGHT) this->vector.y=HEIGHT-4;
-  else               this->vector.y = y;
-  if(x<=0)           this->vector.x=4;
-  else if(x>=WIDTH)  this->vector.x = WIDTH-4;
-  else               this->vector.x = x;
+void Blob::goCord(int x, int y){
+  /* if(y<=0)           this->vector.y=4; */
+  /* else if(y>=HEIGHT) this->vector.y=HEIGHT-4; */
+  /* else               this->vector.y = y; */
+  this->vector.y = y;
+  /* if(x<=0)           this->vector.x=4; */
+  /* else if(x>=WIDTH)  this->vector.x = WIDTH-4; */
+  /* else               this->vector.x = x; */
+  this->vector.x = x;
   this->object.setPosition(this->vector);
 }
 
+void Blob::update(){
+
+  auto y = std::minmax(this->vector.y, this->dest.y);
+  auto x = std::minmax(this->vector.x, this->dest.x);
+  float dist = ((y.second-y.first)*(y.second-y.first)+(x.second-x.first)*(x.second-x.first));
+  if(dist <= (this->size+cutoff)*(this->size+cutoff)){
+    this->dest.x = xmove(gen);
+    this->dest.y = ymove(gen);
+  }
+  else{
+    if(this->vector.x < this->dest.x)
+      this->goCord(this->vector.x+1, this->vector.y);
+    else if(this->vector.x > this->dest.x)
+      this->goCord(this->vector.x-1, this->vector.y);
+
+    /* else  */
+    /*   this->dest.x = xmove(gen); */
+
+    if(this->vector.y < this->dest.y)
+      this->goCord(this->vector.x, this->vector.y+1);
+    else if(this->vector.y > this->dest.y)
+      this->goCord(this->vector.x, this->vector.y-1);
+
+    /* else  */
+    /*   this->dest.y = ymove(gen); */
+  }
+}
 
 
 bool Blob::operator==(Blob &another){
@@ -104,11 +140,12 @@ Blob::Blob(sf::Vector2f v, ColorGenotype c, SizeGenotype sz){
   this->c=c;
   this->s=sz;
 
-  if(sz.first==Small || sz.second==Small) this->size = small_dis(gen);
-  else                                    this->size = big_dist(gen);
+  if(sz.first==Big || sz.second==Big) this->size = big_dist(gen);
+  else                                this->size = small_dis(gen);
 
 
   std::string buf;
+  buf.reserve(4);
   if(this->c.first==Green)  buf+="G";
   else                      buf+="g";
   if(this->c.second==Green) buf+="G";
@@ -117,10 +154,10 @@ Blob::Blob(sf::Vector2f v, ColorGenotype c, SizeGenotype sz){
   this->coltext=sf::Text(buf, font1, this->size);
   buf.clear();
 
-  if(this->s.first==Big)    buf+="S";
-  else                       buf+="s";
-  if(this->s.second==Small) buf+="S";
-  else                       buf+="s";
+  if(this->s.first==Big)  buf+="B";
+  else                    buf+="b";
+  if(this->s.second==Big) buf+="B";
+  else                    buf+="b";
 
   this->sizetext=sf::Text(buf, font1, this->size);
   buf.clear();
@@ -130,6 +167,8 @@ Blob::Blob(sf::Vector2f v, ColorGenotype c, SizeGenotype sz){
   this->previous_cross = std::chrono::steady_clock::now();
   this->birth          = std::chrono::steady_clock::now();
   this->vector=v;
+  this->dest.x = xmove(gen);
+  this->dest.y = ymove(gen);
   this->object.setPosition(v);
   this->object=CircleShape{size};
   if(c.first==Green || c.second==Green){
@@ -160,11 +199,12 @@ Blob::Blob(Blob &parent1, Blob &parent2){
     order?sz1:sz2, order?sz2:sz1
   };
 
-  if(this->s.first==Small || this->s.second==Small) this->size = small_dis(gen);
-  else                                              this->size = big_dist(gen);
+  if(this->s.first==Big || this->s.second==Big) this->size = big_dist(gen);
+  else                                          this->size = small_dis(gen);
 
 
   std::string buf;
+  buf.reserve(4);
   if(this->c.first==Green)  buf+="G";
   else                      buf+="g";
   if(this->c.second==Green) buf+="G";
@@ -173,10 +213,10 @@ Blob::Blob(Blob &parent1, Blob &parent2){
   this->coltext=sf::Text(buf, font1, this->size);
   buf.clear();
 
-  if(this->s.first==Big)    buf+="S";
-  else                       buf+="s";
-  if(this->s.second==Small) buf+="S";
-  else                       buf+="s";
+  if(this->s.first==Big)    buf+="B";
+  else                      buf+="b";
+  if(this->s.second==Big)   buf+="B";
+  else                      buf+="b";
 
   this->sizetext=sf::Text(buf, font1, this->size);
   buf.clear();
@@ -186,6 +226,8 @@ Blob::Blob(Blob &parent1, Blob &parent2){
   this->previous_cross = std::chrono::steady_clock::now();
   this->birth          = std::chrono::steady_clock::now();
   this->vector = parent1.vector;
+  this->dest.x = xmove(gen);
+  this->dest.y = ymove(gen);
   this->object = CircleShape{this->size};
   this->object.setPosition(parent1.vector);
   if(c1==Green || c2==Green){
@@ -223,10 +265,10 @@ int main(int argc, char **argv) {
       if(event.type == sf::Event::KeyPressed){
         if(event.key.code == sf::Keyboard::Escape || event.key.code == sf::Keyboard::Q) w.close();
 
-        if(event.key.code == sf::Keyboard::Right) blobs[0].update(blobs[0].vector.x+16, blobs[0].vector.y  );
-        if(event.key.code == sf::Keyboard::Left)  blobs[0].update(blobs[0].vector.x-16, blobs[0].vector.y  );
-        if(event.key.code == sf::Keyboard::Up)    blobs[0].update(blobs[0].vector.x,    blobs[0].vector.y-16);
-        if(event.key.code == sf::Keyboard::Down)  blobs[0].update(blobs[0].vector.x,    blobs[0].vector.y+16);
+        if(event.key.code == sf::Keyboard::Right) blobs[0].goCord(blobs[0].vector.x+SPEED, blobs[0].vector.y  );
+        if(event.key.code == sf::Keyboard::Left)  blobs[0].goCord(blobs[0].vector.x-SPEED, blobs[0].vector.y  );
+        if(event.key.code == sf::Keyboard::Up)    blobs[0].goCord(blobs[0].vector.x,    blobs[0].vector.y-SPEED);
+        if(event.key.code == sf::Keyboard::Down)  blobs[0].goCord(blobs[0].vector.x,    blobs[0].vector.y+SPEED);
 
       }
     }
@@ -238,9 +280,9 @@ int main(int argc, char **argv) {
       if(blobs.size()<=MAX_BLOBS){
         for(size_t j=i;j<blobs.size();j++){
           if(i==j) continue;
-          auto b = std::chrono::steady_clock::now()-blobs[i].previous_cross;
-          auto c = std::chrono::steady_clock::now()-blobs[j].previous_cross;
           if(blobs[i]==blobs[j]){
+            auto b = std::chrono::steady_clock::now()-blobs[i].previous_cross;
+            auto c = std::chrono::steady_clock::now()-blobs[j].previous_cross;
             if(b.count()>=CROSS_RATE && c.count()>=CROSS_RATE){
               blobs.push_back(Blob(blobs[i], blobs[j]));
               blobs[i].previous_cross=std::chrono::steady_clock::now();
@@ -249,17 +291,19 @@ int main(int argc, char **argv) {
           }
         }
       }
-      blobs[i].update(blobs[i].vector.x+motion_dis(gen), blobs[i].vector.y+motion_dis(gen)  );
-      blobs[i].coltext.setPosition(blobs[i].vector);
+
+
+      blobs[i].update();
+      blobs[i].coltext.setPosition(blobs[i].vector.x+blobs[i].size, blobs[i].vector.y);
       blobs[i].sizetext.setPosition(blobs[i].vector.x, blobs[i].vector.y+blobs[i].size);
       w.draw(blobs[i].object);
       w.draw(blobs[i].coltext);
       w.draw(blobs[i].sizetext);
     }
 
-    for(size_t i=0;i<blobs.size();i++){
-      if(blobs.size()>MIN_BLOBS){
-        auto a = std::chrono::steady_clock::now()-blobs[i].previous_cross;
+    if(blobs.size()>MIN_BLOBS){
+      for(size_t i=0;i<blobs.size();i++){
+        auto a = std::chrono::steady_clock::now()-blobs[i].birth;
         if(a.count()>=DEATH_TIME)
           blobs.erase(blobs.begin()+i);
       }
