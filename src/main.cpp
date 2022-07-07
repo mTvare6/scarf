@@ -1,10 +1,10 @@
 #include <SFML/Config.hpp>
 #include <SFML/Graphics.hpp>
 #include <SFML/Window.hpp>
-#include <SFML/Window/Mouse.hpp>
 #include <iostream>
 #include <random>
 #include <string>
+#include <variant>
 #include <chrono>
 
 using namespace std::string_literals;
@@ -32,7 +32,8 @@ std::mt19937 gen(rd());
 std::uniform_int_distribution<> binary_dis(0, 1);
 
 using sf::CircleShape;
-/* using sf::RectangleShape; */
+using sf::RectangleShape;
+#define SquareShape RectangleShape
 
 
 
@@ -44,18 +45,19 @@ enum Size{
   Big, // dominant
   Small,
 };
+enum Shape{
+  Circle, // dominant
+  Square,
+};
 
 typedef std::pair<Color, Color> ColorGenotype;
 typedef std::pair<Size , Size > SizeGenotype;
-
-sf::Color hex2rgb(const int hex){
-  return sf::Color{static_cast<sf::Uint8>(((hex >> 16) & 0xFF)), static_cast<sf::Uint8>(((hex >> 8) & 0xFF)), static_cast<sf::Uint8>((hex & 0xFF))};
-}
+typedef std::pair<Shape, Shape> ShapeGenotype;
 
 class Blob{
 
   public:
-    Blob(sf::Vector2f=sf::Vector2f{0, 0}, ColorGenotype c=ColorGenotype{Green, Green}, SizeGenotype sz=SizeGenotype{Big, Big});
+    Blob(sf::Vector2f=sf::Vector2f{0, 0}, ColorGenotype c=ColorGenotype{Green, Green}, SizeGenotype sz=SizeGenotype{Big, Big}, ShapeGenotype sh=ShapeGenotype{Circle, Circle});
     Blob(Blob &&) = default;
     Blob(const Blob &) = default;
     Blob(Blob &parent1, Blob &parent2);
@@ -65,13 +67,19 @@ class Blob{
 
     ColorGenotype c;
     SizeGenotype s;
+    ShapeGenotype sp;
     sf::Vector2f vector;
     sf::Vector2f dest;
     float size;
-    CircleShape object;
+
+    bool isCir = false;
+
+    /* CircleShape object; */
+    std::variant<CircleShape, SquareShape> object;
 
     sf::Text coltext;
-    sf::Text sizetext;
+    sf::Text siztext;
+    sf::Text shptext;
 
     std::chrono::steady_clock::time_point previous_cross;
     std::chrono::steady_clock::time_point birth;
@@ -94,7 +102,12 @@ void Blob::goCord(int x, int y){
   /* else if(x>=WIDTH)  this->vector.x = WIDTH-4; */
   /* else               this->vector.x = x; */
   this->vector.x = x;
-  this->object.setPosition(this->vector);
+
+  if(this->isCir) 
+    std::get<CircleShape>(this->object).setPosition(this->vector);
+  else
+    std::get<SquareShape>(this->object).setPosition(this->vector);
+
 }
 
 void Blob::update(){
@@ -135,10 +148,15 @@ bool Blob::operator==(Blob &another){
   /* return dist <= (this->size+another->size+cutoff); */
 }
 
-Blob::Blob(sf::Vector2f v, ColorGenotype c, SizeGenotype sz){
+Blob::Blob(sf::Vector2f v, ColorGenotype c, SizeGenotype sz, ShapeGenotype sh){
 
   this->c=c;
   this->s=sz;
+  this->sp=sh;
+
+  if(this->sp.first==Circle || this->sp.second==Circle){
+    this->isCir = true;
+  }
 
   if(sz.first==Big || sz.second==Big) this->size = big_dist(gen);
   else                                this->size = small_dis(gen);
@@ -159,7 +177,15 @@ Blob::Blob(sf::Vector2f v, ColorGenotype c, SizeGenotype sz){
   if(this->s.second==Big) buf+="B";
   else                    buf+="b";
 
-  this->sizetext=sf::Text(buf, font1, this->size);
+  this->siztext=sf::Text(buf, font1, this->size);
+  buf.clear();
+
+  if(this->sp.first==Circle)  buf+="C";
+  else                        buf+="c";
+  if(this->sp.second==Circle) buf+="C";
+  else                        buf+="c";
+
+  this->shptext=sf::Text(buf, font1, this->size);
   buf.clear();
 
 
@@ -169,17 +195,45 @@ Blob::Blob(sf::Vector2f v, ColorGenotype c, SizeGenotype sz){
   this->vector=v;
   this->dest.x = xmove(gen);
   this->dest.y = ymove(gen);
-  this->object.setPosition(v);
-  this->object=CircleShape{size};
-  if(c.first==Green || c.second==Green){
-    this->object.setFillColor(sf::Color{0xb8bb26ff});
-    this->object.setOutlineThickness(size/10);
-    this->object.setOutlineColor(sf::Color{0x98971aff});
-  }
+
+
+  if(this->isCir)
+    this->object = CircleShape{size};
   else{
-    this->object.setFillColor(sf::Color{0xfabd2fff});
-    this->object.setOutlineThickness(size/10);
-    this->object.setOutlineColor(sf::Color{0xd79921ff});
+    float rs = size*1.5;
+    this->object = SquareShape{sf::Vector2{rs, rs}};
+  }
+
+
+  if(this->isCir) 
+    std::get<CircleShape>(this->object).setPosition(v);
+  else
+    std::get<SquareShape>(this->object).setPosition(v);
+
+
+
+  if(this->isCir){
+      std::get<CircleShape>(this->object).setOutlineThickness(size/10);
+    if(c.first==Green || c.second==Green){
+      std::get<CircleShape>(this->object).setFillColor(sf::Color{0xb8bb26ff});
+      std::get<CircleShape>(this->object).setOutlineColor(sf::Color{0x98971aff});
+    }
+    else{
+      std::get<CircleShape>(this->object).setFillColor(sf::Color{0xfabd2fff});
+      std::get<CircleShape>(this->object).setOutlineColor(sf::Color{0xd79921ff});
+    }
+  }
+
+  else{
+      std::get<SquareShape>(this->object).setOutlineThickness(size/10);
+    if(c.first==Green || c.second==Green){
+      std::get<SquareShape>(this->object).setFillColor(sf::Color{0xb8bb26ff});
+      std::get<SquareShape>(this->object).setOutlineColor(sf::Color{0x98971aff});
+    }
+    else{
+      std::get<SquareShape>(this->object).setFillColor(sf::Color{0xfabd2fff});
+      std::get<SquareShape>(this->object).setOutlineColor(sf::Color{0xd79921ff});
+    }
   }
 }
 
@@ -198,6 +252,15 @@ Blob::Blob(Blob &parent1, Blob &parent2){
   this->s=SizeGenotype{
     order?sz1:sz2, order?sz2:sz1
   };
+
+  Shape sp1 = binary_dis(gen)==0?parent1.sp.first:parent1.sp.second;
+  Shape sp2 = binary_dis(gen)==0?parent2.sp.first:parent2.sp.second;
+  this->sp=ShapeGenotype{
+    order?sp1:sp2, order?sp2:sp1
+  };
+
+  if(sp.first==Circle || sp.second==Circle)
+    this->isCir = true;
 
   if(this->s.first==Big || this->s.second==Big) this->size = big_dist(gen);
   else                                          this->size = small_dis(gen);
@@ -218,7 +281,15 @@ Blob::Blob(Blob &parent1, Blob &parent2){
   if(this->s.second==Big)   buf+="B";
   else                      buf+="b";
 
-  this->sizetext=sf::Text(buf, font1, this->size);
+  this->siztext=sf::Text(buf, font1, this->size);
+  buf.clear();
+
+  if(this->sp.first==Circle)  buf+="C";
+  else                        buf+="c";
+  if(this->sp.second==Circle) buf+="C";
+  else                        buf+="c";
+
+  this->shptext=sf::Text(buf, font1, this->size);
   buf.clear();
 
 
@@ -228,18 +299,48 @@ Blob::Blob(Blob &parent1, Blob &parent2){
   this->vector = parent1.vector;
   this->dest.x = xmove(gen);
   this->dest.y = ymove(gen);
-  this->object = CircleShape{this->size};
-  this->object.setPosition(parent1.vector);
-  if(c1==Green || c2==Green){
-    this->object.setFillColor(sf::Color{0xb8bb26ff});
-    this->object.setOutlineThickness(this->size/10);
-    this->object.setOutlineColor(sf::Color{0x98971aff});
+
+
+
+
+  if(this->isCir)
+    this->object = CircleShape{size};
+  else{
+    float rs = size*1.5;
+    this->object = SquareShape{sf::Vector2{rs, rs}};
+  }
+
+
+  if(this->isCir) 
+    std::get<CircleShape>(this->object).setPosition(parent1.vector);
+  else
+    std::get<SquareShape>(this->object).setPosition(parent1.vector);
+
+
+  if(this->isCir){
+      std::get<CircleShape>(this->object).setOutlineThickness(size/10);
+    if(c.first==Green || c.second==Green){
+      std::get<CircleShape>(this->object).setFillColor(sf::Color{0xb8bb26ff});
+      std::get<CircleShape>(this->object).setOutlineColor(sf::Color{0x98971aff});
+    }
+    else{
+      std::get<CircleShape>(this->object).setFillColor(sf::Color{0xfabd2fff});
+      std::get<CircleShape>(this->object).setOutlineColor(sf::Color{0xd79921ff});
+    }
   }
   else{
-    this->object.setFillColor(sf::Color{0xfabd2fff});
-    this->object.setOutlineThickness(this->size/10);
-    this->object.setOutlineColor(sf::Color{0xd79921ff});
+      std::get<SquareShape>(this->object).setOutlineThickness(size/10);
+    if(c.first==Green || c.second==Green){
+      std::get<SquareShape>(this->object).setFillColor(sf::Color{0xb8bb26ff});
+      std::get<SquareShape>(this->object).setOutlineColor(sf::Color{0x98971aff});
+    }
+    else{
+      std::get<SquareShape>(this->object).setFillColor(sf::Color{0xfabd2fff});
+      std::get<SquareShape>(this->object).setOutlineColor(sf::Color{0xd79921ff});
+    }
   }
+
+
 }
 
 
@@ -253,8 +354,10 @@ int main(int argc, char **argv) {
   font1.loadFromFile("scientifica Nerd Font.ttf");
 
   std::vector<Blob> blobs;
-  blobs.push_back(Blob{sf::Vector2f{(WIDTH/2), (HEIGHT/2)+(HEIGHT/4)}, ColorGenotype{Yellow, Yellow}, SizeGenotype{Small, Small}});
-  blobs.push_back(Blob{sf::Vector2f{(WIDTH/2), (HEIGHT/2)-(HEIGHT/4)}, ColorGenotype{Green , Green }, SizeGenotype{Big  , Big  }});
+
+  blobs.push_back(Blob{sf::Vector2f{(WIDTH/2), (HEIGHT/2)-(HEIGHT/4)}, ColorGenotype{Green , Green }, SizeGenotype{Big  , Big  }, ShapeGenotype{Circle, Circle}});
+  blobs.push_back(Blob{sf::Vector2f{(WIDTH/2), (HEIGHT/2)+(HEIGHT/4)}, ColorGenotype{Yellow, Yellow}, SizeGenotype{Small, Small}, ShapeGenotype{Square, Square}});
+
 
   while (w.isOpen()) {
     sf::Event event;
@@ -294,11 +397,27 @@ int main(int argc, char **argv) {
 
 
       blobs[i].update();
-      blobs[i].coltext.setPosition(blobs[i].vector.x+blobs[i].size, blobs[i].vector.y);
-      blobs[i].sizetext.setPosition(blobs[i].vector.x, blobs[i].vector.y+blobs[i].size);
-      w.draw(blobs[i].object);
+
+      if(blobs[i].isCir){
+        blobs[i].coltext.setPosition(blobs[i].vector.x+blobs[i].size*1.1, blobs[i].vector.y+blobs[i].size);
+        blobs[i].siztext.setPosition(blobs[i].vector.x-blobs[i].size/8,   blobs[i].vector.y+blobs[i].size);
+        blobs[i].shptext.setPosition(blobs[i].vector.x+blobs[i].size*0.6, blobs[i].vector.y              );
+      }
+      else{
+        blobs[i].coltext.setPosition(blobs[i].vector.x+blobs[i].size*0.9, blobs[i].vector.y+blobs[i].size/2  );
+        blobs[i].siztext.setPosition(blobs[i].vector.x-blobs[i].size/3,   blobs[i].vector.y+blobs[i].size/2  );
+        blobs[i].shptext.setPosition(blobs[i].vector.x+blobs[i].size*0.4, blobs[i].vector.y-blobs[i].size*0.4);
+      }
+
+
+      if(blobs[i].isCir)
+        w.draw(std::get<CircleShape>(blobs[i].object));
+      else
+        w.draw(std::get<SquareShape>(blobs[i].object));
+
       w.draw(blobs[i].coltext);
-      w.draw(blobs[i].sizetext);
+      w.draw(blobs[i].siztext);
+      w.draw(blobs[i].shptext);
     }
 
     if(blobs.size()>MIN_BLOBS){
